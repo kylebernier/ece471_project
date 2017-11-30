@@ -15,8 +15,8 @@
 #include <linux/i2c-dev.h>
 
 #define I2C_DEVICE "/dev/i2c-1"
-#define DISPLAY_ADDR 0x70
-#define SCORE_ADDR 0x71
+#define DISPLAY_ADDR 0x71
+#define SCORE_ADDR 0x70
 #define NUNCHUCK_ADDR 0x52
 
 int init_i2c_comm();
@@ -48,7 +48,7 @@ uint16_t fruit_position;
 int main()
 {
 	// Initialize I2C communication
-	//init_i2c_comm();
+	init_i2c_comm();
 
 	// Initialize game
 	init_game();
@@ -74,13 +74,15 @@ int init_i2c_comm()
 	}
 
 	// Initialize the display
-	if (init_i2c_display(fd)) return -1;
+	//if (init_i2c_display(fd)) return -1;
 
 	// Initialize the scoreboard
 	if (init_i2c_scoreboard(fd)) return -1;
 
 	// Initialize the nunchuck
-	if (init_i2c_nunchuck(fd)) return -1;
+	//if (init_i2c_nunchuck(fd)) return -1;
+	
+
 
 	return 0;
 }
@@ -88,12 +90,44 @@ int init_i2c_comm()
 /* Initialize the I2C display */
 int init_i2c_display(const int fd)
 {
+	int result;
+
+	unsigned char buffer[17];
+
 	// Set the slave address
-	
+	result = ioctl(fd, I2C_SLAVE, DISPLAY_ADDR);
+	if (result < 0) {
+		fprintf(stderr, "Error setting the slave address!\n");
+		close(fd);
+		return -1;
+	}
+
 	// Turn on the oscillator
+	buffer[0] = (0x2 << 4) | 0x1;
+	result = write(fd, buffer, 1);
+	if (result < 0) {
+		fprintf(stderr, "Error turing on the occillator!\n");
+		close(fd);
+		return -1;
+	}
+
+	// Turn on Display, No blick
+	buffer[0] = (0x2 << 6) | 0x1;
+	result = write(fd, buffer, 1);
+	if (result < 0) {
+		fprintf(stderr, "Error turning on the display!\n");
+		close(fd);
+		return -1;
+	}
 	
 	// Set the brightness
-	
+	buffer[0] = (0x7 << 5) | 0xd;
+	result = write(fd, buffer, 1);
+	if (result < 0) {
+		fprintf(stderr, "Error setting brightness!\n");
+		close(fd);
+		return -1;
+	}
 
 	return 0;
 }
