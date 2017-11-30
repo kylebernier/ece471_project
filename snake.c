@@ -15,14 +15,21 @@
 #include <linux/i2c-dev.h>
 
 #define I2C_DEVICE "/dev/i2c-1"
+
 #define DISPLAY_ADDR 0x71
 #define SCORE_ADDR 0x70
 #define NUNCHUCK_ADDR 0x52
 
+#define LED_GREEN 1
+#define LED_RED 2
+#define LED_YELLOW 3
+#define LED_OFF 0
+
 int init_i2c_comm();
-int init_i2c_display();
-int init_i2c_scoreboard();
-int init_i2c_nunchuck();
+int init_i2c_display(const int);
+int init_i2c_scoreboard(const int);
+int init_i2c_nunchuck(const int);
+int get_nunchuck(const int, char*);
 int init_game();
 int start_game();
 int move_snake(int);
@@ -38,12 +45,16 @@ int running = 0;
 
 char game_display[8][8] = {{0}};
 
+uint16_t displaybuffer[8];
+
 // Snake parameters
 uint16_t snake_position[64] = {{0}};
 int snake_direction;
 int snake_size;
 
 uint16_t fruit_position;
+
+int fd;
 
 int main()
 {
@@ -61,9 +72,7 @@ int main()
 
 /* Initialize I2C communication */
 int init_i2c_comm()
-{
-	int fd;
-	
+{	
 	// Open the I2C device
 	fd = open(I2C_DEVICE, O_RDWR);
 	// Handle errors
@@ -74,15 +83,13 @@ int init_i2c_comm()
 	}
 
 	// Initialize the display
-	//if (init_i2c_display(fd)) return -1;
+	if (init_i2c_display(fd)) return -1;
 
 	// Initialize the scoreboard
 	if (init_i2c_scoreboard(fd)) return -1;
 
 	// Initialize the nunchuck
-	//if (init_i2c_nunchuck(fd)) return -1;
-	
-
+	if (init_i2c_nunchuck(fd)) return -1;
 
 	return 0;
 }
@@ -91,13 +98,14 @@ int init_i2c_comm()
 int init_i2c_display(const int fd)
 {
 	int result;
+	int i;
 
 	unsigned char buffer[17];
 
 	// Set the slave address
 	result = ioctl(fd, I2C_SLAVE, DISPLAY_ADDR);
 	if (result < 0) {
-		fprintf(stderr, "Error setting the slave address!\n");
+		fprintf(stderr, "Error setting the display slave address!\n");
 		close(fd);
 		return -1;
 	}
@@ -106,7 +114,7 @@ int init_i2c_display(const int fd)
 	buffer[0] = (0x2 << 4) | 0x1;
 	result = write(fd, buffer, 1);
 	if (result < 0) {
-		fprintf(stderr, "Error turing on the occillator!\n");
+		fprintf(stderr, "Error turing on the display occillator!\n");
 		close(fd);
 		return -1;
 	}
@@ -124,7 +132,18 @@ int init_i2c_display(const int fd)
 	buffer[0] = (0x7 << 5) | 0xd;
 	result = write(fd, buffer, 1);
 	if (result < 0) {
-		fprintf(stderr, "Error setting brightness!\n");
+		fprintf(stderr, "Error setting display brightness!\n");
+		close(fd);
+		return -1;
+	}
+
+	// Clear the display
+	for (i = 0; i <= 16; i++) {
+		buffer[i] = 0x00;
+	}
+	result = write(fd, buffer, 17);
+	if (result < 0) {
+		fprintf(stderr, "Error clearing the display!\n");
 		close(fd);
 		return -1;
 	}
@@ -135,23 +154,226 @@ int init_i2c_display(const int fd)
 /* Initialize the I2C scoreboard */
 int init_i2c_scoreboard(const int fd)
 {
+	int result;
+	int i;
+
+	unsigned char buffer[17];
+
 	// Set the slave address
-	
+	result = ioctl(fd, I2C_SLAVE, SCORE_ADDR);
+	if (result < 0) {
+		fprintf(stderr, "Error setting the score slave address!\n");
+		close(fd);
+		return -1;
+	}
+
 	// Turn on the oscillator
+	buffer[0] = (0x2 << 4) | 0x1;
+	result = write(fd, buffer, 1);
+	if (result < 0) {
+		fprintf(stderr, "Error turing on the score occillator!\n");
+		close(fd);
+		return -1;
+	}
+
+	// Turn on Display, No blick
+	buffer[0] = (0x2 << 6) | 0x1;
+	result = write(fd, buffer, 1);
+	if (result < 0) {
+		fprintf(stderr, "Error turning on the score!\n");
+		close(fd);
+		return -1;
+	}
 	
 	// Set the brightness
+	buffer[0] = (0x7 << 5) | 0xd;
+	result = write(fd, buffer, 1);
+	if (result < 0) {
+		fprintf(stderr, "Error setting score brightness!\n");
+		close(fd);
+		return -1;
+	}
 
-
+	// Clear the display
+	for (i = 0; i <= 16; i++) {
+		buffer[i] = 0x00;
+	}
+	result = write(fd, buffer, 17);
+	if (result < 0) {
+		fprintf(stderr, "Error clearing the score!\n");
+		close(fd);
+		return -1;
+	}
+	
 	return 0;
 }
 
 /* Initialize the I2C nunchuck */
 int init_i2c_nunchuck(const int fd)
 {
+	int result;
+
+	unsigned char buffer[17];
+
 	// Set the slave address
+	result = ioctl(fd, I2C_SLAVE, NUNCHUCK_ADDR);
+	if (result < 0) {
+		fprintf(stderr, "Error setting the nunchuck slave address!\n");
+		close(fd);
+		return -1;
+	}
+
+	// Send setup byte 0x40
+	buffer[0] = 0x40;
+	result = write(fd, buffer, 1);
+	if (result < 0) {
+		fprintf(stderr, "Error sending handshake to nunchuck!\n");
+		close(fd);
+		return -1;
+	}
+
+	// Send setup byte 0x00
+	buffer[0] = 0x00;
+	result = write(fd, buffer, 1);
+	if (result < 0) {
+		fprintf(stderr, "Error sending handshake to nunchuck!\n");
+		close(fd);
+		return -1;
+	}
 	
-	// Send setup bytes
+	return 0;
+}
+
+int write_score(const int fd, int score) {
+	int result;
+	int i;
+
+	unsigned char buffer[17];
 	
+	// Set the slave address
+	result = ioctl(fd, I2C_SLAVE, SCORE_ADDR);
+	if (result < 0) {
+		fprintf(stderr, "Error setting the score slave address!\n");
+		close(fd);
+		return -1;
+	}
+	
+	// Clear the buffer
+	for (i = 0; i <= 16; i++) {
+		buffer[i] = 0x00;
+	}
+
+	buffer[1] = 0x79;
+	buffer[3] = 0x39;
+	buffer[7] = 0x79;
+	write(fd, buffer, 17);
+
+
+	return 0;
+}
+
+/* Write a pixel to the display buffer */
+int write_pixel(uint16_t x, uint16_t y, int color) {
+	if ((y < 0) || (y >= 8)) return -1;
+	if ((x < 0) || (y >= 8)) return -1;
+
+	if (color == LED_GREEN) {
+		// Turn on green LED
+		displaybuffer[y] |= 1 << x;
+		// Turn off red LED
+		displaybuffer[y] &= ~(1 << (x + 8));
+	} else if (color == LED_RED) {
+		// Turn on red LED
+		displaybuffer[y] |= 1 << (x + 8);
+		// Turn off green LED
+		displaybuffer[y] &= ~(1 << x);
+	} else if (color == LED_YELLOW) {
+		// Turn on green and red LED
+		displaybuffer[y] |= (1 << (x + 8)) | (1 << x);
+	} else if (color == LED_OFF) {
+		// Turn off green and red LED
+		displaybuffer[y] &= ~(1 << x) & ~(1 << (x + 8));
+	}
+
+	return 0;
+}
+
+int write_display(const int fd) {
+	int result;
+	int i;
+
+	unsigned char buffer[17];
+
+	// Set the slave address
+	result = ioctl(fd, I2C_SLAVE, DISPLAY_ADDR);
+	if (result < 0) {
+		fprintf(stderr, "Error setting the display slave address!\n");
+		close(fd);
+		return -1;
+	}
+	
+	// Clear the buffer
+	for (i = 0; i <= 16; i++) {
+		buffer[i] = 0x00;
+	}
+	result = write(fd, buffer, 1);
+
+	if (result < 0) {
+		fprintf(stderr, "Error writing to display!\n");
+		close(fd);
+		return -1;
+	}
+
+	for (i = 0; i < 8; i++) {
+		buffer[0] = displaybuffer[i] & 0xFF;
+		result = write(fd, buffer, 1);
+		if (result < 0) {
+			fprintf(stderr, "Error writing to display!\n");
+			close(fd);
+			return -1;
+		}
+		
+		buffer[0] = displaybuffer[i] >> 8;
+		result = write(fd, buffer, 1);
+		if (result < 0) {
+			fprintf(stderr, "Error writing to display!\n");
+			close(fd);
+			return -1;
+		}
+	}
+
+	return 0;	
+}
+
+int get_nunchuck(const int fd, char* data) {
+	int result;
+
+	unsigned char buffer[17];
+	
+	// Set the slave address
+	result = ioctl(fd, I2C_SLAVE, NUNCHUCK_ADDR);
+	if (result < 0) {
+		fprintf(stderr, "Error setting the nunchuck slave address!\n");
+		close(fd);
+		return -1;
+	}
+	
+	// Send request byte 0x00
+	buffer[0] = 0x00;
+	result = write(fd, buffer, 1);
+	if (result < 0) {
+		fprintf(stderr, "Error requesting nunchuck data!\n");
+		close(fd);
+		return -1;
+	}
+
+	// Read the data
+	result = read(fd, data, 6);
+	if (result < 0) {
+		fprintf(stderr, "Error reading nunchuck data!\n");
+		close(fd);
+		return -1;
+	}
 
 	return 0;
 }
@@ -214,7 +436,10 @@ int start_game()
 		for (i = 0; i < snake_size; i++) {
 			uint16_t pos = snake_position[i];
 			printf("Segment %d: [%d, %d]\n", i, get_x(pos), get_y(pos));
+			write_pixel(get_x(pos) - 1, get_y(pos) - 1, 3);
 		}
+		write_display(fd);
+		write_score(fd, 4);
 	
 		move_snake(skip_last);
 		printf("Snake Moved!\n");
